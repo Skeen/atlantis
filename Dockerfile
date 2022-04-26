@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -v -o atlantis .
 FROM ghcr.io/runatlantis/atlantis-base:2022.03.04 AS base
 
 # Get the architecture the image is being built for
-ARG TARGETPLATFORM
+ENV TARGETPLATFORM="linux/amd64"
 
 # install terraform binaries
 ENV DEFAULT_TERRAFORM_VERSION=1.1.7

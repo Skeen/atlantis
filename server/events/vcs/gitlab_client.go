@@ -24,7 +24,7 @@ import (
 
 	"github.com/runatlantis/atlantis/server/core/config"
 
-	"github.com/runatlantis/atlantis/server/events/command"
+    "github.com/runatlantis/atlantis/server/events/command"
 	"github.com/runatlantis/atlantis/server/events/vcs/common"
 
 	version "github.com/hashicorp/go-version"
@@ -212,23 +212,56 @@ func (g *GitlabClient) PullIsMergeable(repo models.Repo, pull models.PullRequest
 	}
 
 	for _, status := range statuses {
-		if !strings.HasPrefix(status.Name, fmt.Sprintf("atlantis/%s", command.Apply.String())) {
-			if !status.AllowFailure && project.OnlyAllowMergeIfPipelineSucceeds && status.Status != "success" {
-				return false, nil
-			}
-		}
+        // Ignore any commit statuses with 'altantis/apply' as prefix
+        if strings.HasPrefix(status.Name, fmt.Sprintf("atlantis/%s", command.Apply.String())) {
+            fmt.Println("CI Status:", status.Name, "skipped")
+            continue;
+        }
+        // Ignore any commit statuses with status skipped
+        if status.Status == "skipped" {
+            fmt.Println("CI Status:", status.Name, "skipped")
+            continue;
+        }
+        // If any commit-status != success, reject it
+        if !status.AllowFailure && project.OnlyAllowMergeIfPipelineSucceeds && status.Status != "success" {
+            fmt.Println("CI Status:", status.Name, "rejected")
+            return false, nil
+        }
 	}
 
+    // If we are not mergable, reject it
+    if mr.MergeStatus != "can_be_merged" {
+        fmt.Println("mr.MergeStatus rejected", mr.MergeStatus)
+        return false, nil
+    }
+
+    // If we are missing approvals, reject it
+    if mr.ApprovalsBeforeMerge > 0 {
+        fmt.Println("mr.ApprovalsBeforeMerge rejected", mr.ApprovalsBeforeMerge)
+        return false, nil
+    }
+
+    // If discussions are open, reject it
+	if ! mr.BlockingDiscussionsResolved {
+        fmt.Println("mr.BlockingDiscussionsResolved rejected", mr.BlockingDiscussionsResolved)
+        return false, nil
+    }
+
+    // If WIP, reject it
+    if mr.WorkInProgress {
+        fmt.Println("mr.WorkInProgress rejected", mr.WorkInProgress)
+        return false, nil
+    }
+
+    // If the pipeline has completely been skipped, and this is not allowed, reject it
 	isPipelineSkipped := mr.HeadPipeline.Status == "skipped"
 	allowSkippedPipeline := project.AllowMergeOnSkippedPipeline && isPipelineSkipped
-	if mr.MergeStatus == "can_be_merged" &&
-		mr.ApprovalsBeforeMerge <= 0 &&
-		mr.BlockingDiscussionsResolved &&
-		!mr.WorkInProgress &&
-		(allowSkippedPipeline || !isPipelineSkipped) {
-		return true, nil
+	if ! (allowSkippedPipeline || !isPipelineSkipped) {
+        fmt.Println("(allowSkippedPipeline || !isPipelineSkipped) rejected", allowSkippedPipeline, isPipelineSkipped)
+		return false, nil
 	}
-	return false, nil
+
+	return true, nil
 }
 
 // UpdateStatus updates the build status of a commit.
